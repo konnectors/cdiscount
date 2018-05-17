@@ -19,9 +19,10 @@ const request = requestFactory({
   jar: true
 })
 
-const baseUrl = 'http://books.toscrape.com'
-
 module.exports = new BaseKonnector(start)
+
+const vendor = 'cdiscount'
+const baseurl = 'https://clients.cdiscount.com'
 
 // The start function is run by the BaseKonnector instance only when it got all the account
 // information (fields). When you run this connector yourself in "standalone" mode or "dev" mode,
@@ -30,35 +31,39 @@ async function start(fields) {
   log('info', 'Authenticating ...')
   await authenticate(fields.login, fields.password)
   log('info', 'Successfully logged in')
-  // The BaseKonnector instance expects a Promise as return of the function
-  log('info', 'Fetching the list of documents')
-  const $ = await request(`${baseUrl}/index.html`)
-  // cheerio (https://cheerio.js.org/) uses the same api as jQuery (http://jquery.com/)
-  log('info', 'Parsing list of documents')
-  const documents = await parseDocuments($)
+  const saleFolderIDs = await getSaleFolderIDs()
+  log('info', `Found ${saleFolderIDs.length} document(s)`)
+  const orders = await fetchAllOrders(saleFolderIDs)
 
-  // here we use the saveBills function even if what we fetch are not bills, but this is the most
-  // common case in connectors
-  log('info', 'Saving data to Cozy')
-  await saveBills(documents, fields.folderPath, {
-    // this is a bank identifier which will be used to link bills to bank operations. These
-    // identifiers should be at least a word found in the title of a bank operation related to this
-    // bill. It is not case sensitive.
-    identifiers: ['books']
+  const bills = await fetchBills(orders)
+  log('info', `Saving ${bills.length} bills`)
+
+  await saveBills(bills, fields.folderPath, {
+    // this is a bank identifier which will be used to link bills to bank
+    // operations. These identifiers should be at least a word found in the
+    // title of a bank operation related to this bill. It is not case sensitive.
+    identifiers: [vendor]
   })
 }
 
 // this shows authentication using the [signin function](https://github.com/konnectors/libs/blob/master/packages/cozy-konnector-libs/docs/api.md#module_signin)
 // even if this in another domain here, but it works as an example
-function authenticate(username, password) {
+async function authenticate(username, password) {
+  const url = `${baseurl}/Account/Login.html`
+  await request(url)
+
   return signin({
-    url: `http://quotes.toscrape.com/login`,
-    formSelector: 'form',
-    formData: { username, password },
+    url,
+    formSelector: '#loginForm',
+    formData: {
+      'LoginViewData.CustomerLoginFormData.Email': username,
+      'LoginViewData.CustomerLoginFormData.Password': password
+    },
+
     // the validate function will check if
     validate: (statusCode, $) => {
       // The login in toscrape.com always works excepted when no password is set
-      if ($(`a[href='/logout']`).length === 1) {
+      if ($(`a[title='disconnect']`).length === 1) {
         return true
       } else {
         // cozy-konnector-libs has its own logging function which format these logs with colors in
@@ -70,50 +75,80 @@ function authenticate(username, password) {
   })
 }
 
-// The goal of this function is to parse a html page wrapped by a cheerio instance
-// and return an array of js objects which will be saved to the cozy by saveBills (https://github.com/cozy/cozy-konnector-libs/blob/master/docs/api.md#savebills)
-function parseDocuments($) {
+async function getSaleFolderIDs() {
+  const $ = await request(`${baseurl}/order/orderstracking.html`)
+
+  return $('#OrderTrackingFormData_SaleFolderId option')
+    .map(function(i, el) {
+      return $(el).attr('value')
+    })
+    .get()
+}
+
+async function fetchAllOrders(saleFolderIDs) {
+  const orders = []
+  for (saleFolderID of saleFolderIDs) {
+    orders.push(await fetchOrder(saleFolderID))
+  }
+
+  log('debug', orders)
+
+  return orders
+}
+
+async function fetchOrder(saleFolderID) {
+  log('info', `fetching order ${saleFolderID}`)
+
+  var options = {
+    method: 'POST',
+    uri: `${baseurl}/Order/OrderTracking.html`,
+    formData: {
+      'OrderTrackingFormData.SaleFolderId': saleFolderID
+    }
+  }
+
+  const $ = await request(options)
+
   // you can find documentation about the scrape function here :
   // https://github.com/konnectors/libs/blob/master/packages/cozy-konnector-libs/docs/api.md#scrape
-  const docs = scrape(
+  return scrape(
     $,
     {
-      title: {
-        sel: 'h3 a',
-        attr: 'title'
+      description: {
+        sel: '.czPrdDesc strong'
       },
       amount: {
-        sel: '.price_color',
-        parse: normalizePrice
+        sel: '.czOrderHeaderBlocLeft p',
+        parse: text => text.split('€')[0].trim()
       },
-      url: {
-        sel: 'h3 a',
-        attr: 'title',
-        parse: url => `${baseUrl}/${url}`
+      billPath: {
+        sel: "a[title='Facture']",
+        attr: 'href'
       },
-      fileurl: {
-        sel: 'img',
-        attr: 'src',
-        parse: src => `${baseUrl}/${src}`
-      },
-      filename: {
-        sel: 'h3 a',
-        attr: 'title',
-        parse: title => `${title}.jpg`
+      date: {
+        sel: `#OrderTrackingFormData_SaleFolderId option[value='${saleFolderID}']`,
+        parse: text =>
+          text
+            .split(' - ')[0]
+            .trim()
+            .replace(/\//g, '-')
       }
     },
-    'article'
-  )
-  return docs.map(doc => ({
+    '#czCt'
+  )[0]
+}
+
+async function fetchBills(orders) {
+  log('debug', `${baseurl}${orders[0].billPath}`)
+  return orders.filter(order => order.billPath).map(doc => ({
     ...doc,
-    // the saveBills function needs a date field
-    // even if it is a little artificial here (these are not real bills)
-    date: new Date(),
     currency: '€',
-    vendor: 'template',
+    fileurl: `${baseurl}${doc.billPath}`,
+    vendor,
+    filename: `${vendor}-${doc.date}-${doc.amount}-${doc.description}.pdf`,
     metadata: {
-      // it can be interesting that we add the date of import. This is not mandatory but may be
-      // usefull for debugging or data migration
+      // it can be interesting that we add the date of import. This is not
+      // mandatory but may be usefull for debugging or data migration
       importDate: new Date(),
       // document version, usefull for migration after change of document structure
       version: 1

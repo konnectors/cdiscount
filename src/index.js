@@ -6,6 +6,7 @@ const {
   saveBills,
   log
 } = require('cozy-konnector-libs')
+
 const request = requestFactory({
   // the debug mode shows all the details about http request and responses. Very usefull for
   // debugging but very verbose. That is why it is commented out by default
@@ -24,32 +25,27 @@ module.exports = new BaseKonnector(start)
 const vendor = 'cdiscount'
 const baseurl = 'https://clients.cdiscount.com'
 
-// The start function is run by the BaseKonnector instance only when it got all the account
-// information (fields). When you run this connector yourself in "standalone" mode or "dev" mode,
-// the account information come from ./konnector-dev-config.json file
 async function start(fields) {
   log('info', 'Authenticating ...')
   await authenticate(fields.login, fields.password)
   log('info', 'Successfully logged in')
+
+  log('info', 'Fetching list of orders')
   const saleFolderIDs = await getSaleFolderIDs()
-  log('info', `Found ${saleFolderIDs.length} document(s)`)
+  log('info', 'Fetching orders')
   const orders = await fetchAllOrders(saleFolderIDs)
-
+  log('info', 'Fetching bills')
   const bills = await fetchBills(orders)
-  log('info', `Saving ${bills.length} bills`)
-
+  log('info', 'Saving data to Cozy')
   await saveBills(bills, fields.folderPath, {
-    // this is a bank identifier which will be used to link bills to bank
-    // operations. These identifiers should be at least a word found in the
-    // title of a bank operation related to this bill. It is not case sensitive.
     identifiers: [vendor]
   })
 }
 
-// this shows authentication using the [signin function](https://github.com/konnectors/libs/blob/master/packages/cozy-konnector-libs/docs/api.md#module_signin)
-// even if this in another domain here, but it works as an example
 async function authenticate(username, password) {
   const url = `${baseurl}/Account/Login.html`
+  // The cookie "__RequestVerificationToken" is required to log in. This first
+  // request is here for that reason.
   await request(url)
 
   return signin({
@@ -60,9 +56,7 @@ async function authenticate(username, password) {
       'LoginViewData.CustomerLoginFormData.Password': password
     },
 
-    // the validate function will check if
     validate: (statusCode, $) => {
-      // The login in toscrape.com always works excepted when no password is set
       if ($(`a[title='disconnect']`).length === 1) {
         return true
       } else {
@@ -75,6 +69,10 @@ async function authenticate(username, password) {
   })
 }
 
+// There is a form through which we access all the orders.
+//
+// CAVEAT: we do not have at our disposal an account where several items were
+// ordered at the same time.
 async function getSaleFolderIDs() {
   const $ = await request(`${baseurl}/order/orderstracking.html`)
 
@@ -87,18 +85,15 @@ async function getSaleFolderIDs() {
 
 async function fetchAllOrders(saleFolderIDs) {
   const orders = []
-  for (saleFolderID of saleFolderIDs) {
+  for (let saleFolderID of saleFolderIDs) {
     orders.push(await fetchOrder(saleFolderID))
   }
-
-  log('debug', orders)
 
   return orders
 }
 
 async function fetchOrder(saleFolderID) {
-  log('info', `fetching order ${saleFolderID}`)
-
+  // First request to change the order that is currently displayed.
   var options = {
     method: 'POST',
     uri: `${baseurl}/Order/OrderTracking.html`,
@@ -109,17 +104,24 @@ async function fetchOrder(saleFolderID) {
 
   const $ = await request(options)
 
-  // you can find documentation about the scrape function here :
-  // https://github.com/konnectors/libs/blob/master/packages/cozy-konnector-libs/docs/api.md#scrape
-  return scrape(
+  let order = scrape(
     $,
     {
+      // CAVEAT: What description should we put in case there are several items
+      // linked to a single order?
+      // CAVEAT: The description is a sentence, thus it contains spaces. Some
+      // processing is required before using it.
       description: {
         sel: '.czPrdDesc strong'
       },
       amount: {
         sel: '.czOrderHeaderBlocLeft p',
-        parse: text => text.split('€')[0].trim()
+        parse: text =>
+          text
+            .split('€')[0]
+            .trim()
+            // The amount is written using the French convention.
+            .replace(',', '.')
       },
       billPath: {
         sel: "a[title='Facture']",
@@ -135,28 +137,53 @@ async function fetchOrder(saleFolderID) {
       }
     },
     '#czCt'
-  )[0]
+  )[0] // scrape returns an array while here there is only one element.
+
+  order.amount = parseFloat(order.amount)
+  order.date = normalizeDate(order.date)
+
+  return order
 }
 
 async function fetchBills(orders) {
-  log('debug', `${baseurl}${orders[0].billPath}`)
-  return orders.filter(order => order.billPath).map(doc => ({
-    ...doc,
+  // Some orders may have been canceled leading to an empty billPath. We filter
+  // them out.
+  return orders.filter(order => order.billPath).map(order => ({
+    ...order,
     currency: '€',
-    fileurl: `${baseurl}${doc.billPath}`,
+    fileurl: `${baseurl}${order.billPath}`,
     vendor,
-    filename: `${vendor}-${doc.date}-${doc.amount}-${doc.description}.pdf`,
+    filename: `${formatDate(order.date)}-${vendor.toUpperCase()}-${
+      order.amount
+    }EUR.pdf`,
     metadata: {
-      // it can be interesting that we add the date of import. This is not
-      // mandatory but may be usefull for debugging or data migration
       importDate: new Date(),
-      // document version, usefull for migration after change of document structure
       version: 1
     }
   }))
 }
 
-// convert a price string to a float
-function normalizePrice(price) {
-  return parseFloat(price.trim().replace('£', ''))
+// In CDiscount the date has the format "DD-MM-YYYY", this function parses it
+// and returns a JavaScript date object.
+function normalizeDate(date) {
+  let [day, month, year] = date.split('-')
+  return new Date(`${year}-${month}-${day}`)
+}
+
+// Return a string representation of the date that follows this format:
+// "YYYY-MM-DD". Leading "0" for the day and the month are added if needed.
+function formatDate(date) {
+  let month = date.getMonth() + 1
+  if (month < 10) {
+    month = '0' + month
+  }
+
+  let day = date.getDate()
+  if (day < 10) {
+    day = '0' + day
+  }
+
+  let year = date.getFullYear()
+
+  return `${year}${month}${day}`
 }

@@ -25,6 +25,10 @@ module.exports = new BaseKonnector(start)
 const vendor = 'cdiscount'
 const baseurl = 'https://clients.cdiscount.com'
 
+process.env.SENTRY_DSN =
+  process.env.SENTRY_DSN ||
+    'https://c76a294b95744d2cbd8bbf52cb13cd5f:7d6b141aa5fd41b882cf12088683b30a@sentry.cozycloud.cc/51'
+
 async function start(fields) {
   log('info', 'Authenticating ...')
   await authenticate(fields.login, fields.password)

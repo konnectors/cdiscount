@@ -1,13 +1,13 @@
 {
   "version": "1.0.0",
-  "name": "Connector template",
+  "name": "Cdiscount",
   "type": "konnector",
   "language": "node",
-  "icon": "icon.png",
-  "slug": "template",
-  "source": "git://github.com/konnectors/cozy-konnector-template.git",
+  "icon": "icon.svg",
+  "slug": "cdiscount",
+  "source": "git://github.com/konnectors/cdiscount.git",
   "editor": "Cozy",
-  "vendor_link": "Link to the target website",
+  "vendor_link": "https://clients.cdiscount.com/Account/Login.html",
   "categories": ["other"],
   "fields": {
     "login": {
@@ -26,7 +26,7 @@
   "data_types": [
     "bill"
   ],
-  "screenshots": [ "screenshots/screenshot1.png" ],
+  "screenshots": [],
   "permissions": {
     "bank operations": {
       "type": "io.cozy.bank.operations"
@@ -49,8 +49,8 @@
   "langs": ["fr", "en"],
   "locales": {
     "fr": {
-      "short_description": "Template de connecteur",
-      "long_description": "Ce template récupère une liste de livres sur un site de scraping",
+      "short_description": "Connecteur Cdiscount",
+      "long_description": "Ce Connecteur récupère vos factures Cdiscount",
       "permissions": {
         "bank operations": {
           "description": "Utilisé pour relier les factures à des operations bancaires"
@@ -67,8 +67,8 @@
       }
     },
     "en": {
-      "short_description": "Connector template",
-      "long_description": "This template fetches a list of books from a scraping website",
+      "short_description": "Connector cdiscount",
+      "long_description": "This connector fetches your invoices from Cdiscount",
       "permissions": {
         "bank operations": {
           "description": "Required to link bank operations to bills"

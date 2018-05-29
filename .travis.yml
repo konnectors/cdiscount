@@ -1,0 +1,41 @@
+language: node_js
+node_js:
+- '8'
+env:
+  global:
+  - GH_USER_EMAIL="travis@example.org"
+  - GH_USER_NAME="cozy-bot"
+  - DEPLOY_REPOSITORY="git@github.com:konnectors/cdiscount.git"
+  # REGISTRY_TOKEN --app cdiscount
+  - secure: N33rzLi51ldrIxtQBs93D0+RaGAJB1T49WdwQcrigTTHJgXvP+1TUDn45N/wJbxE1fdqd8Cn8xU/8oJZMXDjPCU00wY/u/EYDJdU3DnZ01CR3bWT1EuGmOw92OX/+01AUwwv8slOp/kW14nbTNkKBbBFvie/fxrrbrhdtY7kM8xodfnYHNv9W6uR5ntyhF1o7Jey3o3qByRg82vdWtW7kIQUkPGK1OYcA1fIFeB5tSxonGNg9Xs8UC53vcBW7BP1EPbY8jAb5HVZpd/HsaLYxRqaglGRMhAjMZAyOgkT5TsCERvjbswZcS8Yil2SpdauVGPCo5OKd9pdjrlE+j3+9UCNO/tXQKxuC/5hSW2CDFxc+QP2TjTsDDZouAi/GipfhFXNt/QJUZ//EDElzXB2ugLi4Bpuq8zHp6wXKbl25XqEivCtglFdTSXdmfOau1Zo9781rbZv+VOkhiWT9ReTSWSEju3forBeENjACFez/E62Ky0aHK27kCBiM7FbZ0Zp1BNY99NGfJNeBac3i5S6HIvv18tV6EweZ1hVgYZJ9SVs+HiE5lXJ8mJn1+2mCkOWtM6FukOGHOVNIWd0eQvEEiG7UmEbmkJPy6UWrPMFEqejRGHnivzqtPjLo+w1VryOaiCWYOX5Z7u+RyCy6e+ThjiTaYeJVkHwcJnXTvbgB/A=
+cache:
+  yarn: true
+  directories:
+  - node_modules
+branches:
+  except:
+  - build
+  - latest
+script:
+- yarn lint
+- yarn build
+deploy:
+- provider: script
+  skip-cleanup: true
+  script: DEPLOY_BRANCH=build yarn deploy && yarn cozyPublish
+  on:
+    branch: master
+- provider: script
+  skip-cleanup: true
+  script: DEPLOY_BRANCH=build yarn deploy && yarn cozyPublish
+  on:
+    tags: true
+before_install:
+- openssl aes-256-cbc -K $encrypted_a66f859914c0_key -iv $encrypted_a66f859914c0_iv
+  -in github_deploy_key.enc -out /tmp/github_deploy_key -d
+- eval "$(ssh-agent -s)"
+- chmod 600 /tmp/github_deploy_key
+- ssh-add /tmp/github_deploy_key
+after_deploy:
+- rm /tmp/github_deploy_key
+- ssh-add -D

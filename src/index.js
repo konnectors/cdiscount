@@ -59,16 +59,14 @@ async function authenticate(username, password) {
       'LoginViewData.CustomerLoginFormData.Email': username,
       'LoginViewData.CustomerLoginFormData.Password': password
     },
-
     validate: (statusCode, $) => {
-      if ($(`a[title='disconnect']`).length === 1) {
-        return true
-      } else {
-        // cozy-konnector-libs has its own logging function which format these logs with colors in
-        // standalone and dev mode and as JSON in production mode
-        log('error', $('.error').text())
-        return false
+      const result = $('ul.error').length === 0
+
+      if (!result) {
+        log('error', $('ul.error').text())
       }
+
+      return result
     }
   })
 }

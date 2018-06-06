@@ -3,12 +3,12 @@
   "name": "Cdiscount",
   "type": "konnector",
   "language": "node",
-  "icon": "icon.svg",
+  "icon": "icon.png",
   "slug": "cdiscount",
   "source": "git://github.com/konnectors/cdiscount.git",
   "editor": "Cozy",
   "vendor_link": "https://clients.cdiscount.com/Account/Login.html",
-  "categories": ["other"],
+  "categories": ["shopping"],
   "fields": {
     "login": {
       "type": "text"

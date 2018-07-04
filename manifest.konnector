@@ -85,5 +85,6 @@
       }
     }
   },
+  "banksTransactionRegExp": "\\bcdiscount\\b",
   "manifest_version": "2"
 }

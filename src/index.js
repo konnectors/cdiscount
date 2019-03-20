@@ -150,19 +150,21 @@ async function fetchOrder(saleFolderID) {
 async function fetchBills(orders) {
   // Some orders may have been canceled leading to an empty billPath. We filter
   // them out.
-  return orders.filter(order => order.billPath).map(order => ({
-    ...order,
-    currency: '€',
-    fileurl: `${baseurl}${order.billPath}`,
-    vendor,
-    filename: `${formatDate(order.date)}-${vendor.toUpperCase()}-${
-      order.amount
-    }EUR.pdf`,
-    metadata: {
-      importDate: new Date(),
-      version: 1
-    }
-  }))
+  return orders
+    .filter(order => order.billPath)
+    .map(order => ({
+      ...order,
+      currency: '€',
+      fileurl: `${baseurl}${order.billPath}`,
+      vendor,
+      filename: `${formatDate(order.date)}-${vendor.toUpperCase()}-${
+        order.amount
+      }EUR.pdf`,
+      metadata: {
+        importDate: new Date(),
+        version: 1
+      }
+    }))
 }
 
 // In CDiscount the date has the format "DD-MM-YYYY", this function parses it

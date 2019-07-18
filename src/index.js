@@ -76,7 +76,7 @@ async function authenticate(username, password) {
 // CAVEAT: we do not have at our disposal an account where several items were
 // ordered at the same time.
 async function getSaleFolderIDs() {
-  const $ = await request(`${baseurl}/order/orderstracking.html`)
+  const $ = await request(`${baseurl}/Order/OrdersTracking.html`)
 
   return $('#OrderTrackingFormData_SaleFolderId option')
     .map(function(i, el) {
@@ -117,16 +117,17 @@ async function fetchOrder(saleFolderID) {
         sel: '.czPrdDesc strong'
       },
       amount: {
-        sel: '.czOrderHeaderBlocLeft p',
-        parse: text =>
-          text
-            .split('€')[0]
+        sel: '.czOrderHeaderBloc .czOrderHeaderBlocLeft',
+        fn: el =>
+          $(el)[0]
+            .children.find(el => el.type === 'text')
+            .data.split('€')[0]
             .trim()
             // The amount is written using the French convention.
             .replace(',', '.')
       },
       billPath: {
-        sel: "a[title='Facture']",
+        sel: "a[title^='Imprimer']",
         attr: 'href'
       },
       date: {

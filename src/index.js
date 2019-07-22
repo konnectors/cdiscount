@@ -43,7 +43,7 @@ async function start(fields) {
   log('info', 'Saving data to Cozy')
   await saveBills(bills, fields.folderPath, {
     identifiers: [vendor],
-    sourceAccount: this._account.id,
+    sourceAccount: this._account._id,
     sourceAccountIdentifier: fields.login
   })
 }

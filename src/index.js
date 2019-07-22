@@ -42,7 +42,9 @@ async function start(fields) {
   const bills = await fetchBills(orders)
   log('info', 'Saving data to Cozy')
   await saveBills(bills, fields.folderPath, {
-    identifiers: [vendor]
+    identifiers: [vendor],
+    sourceAccount: this._account.id,
+    sourceAccountIdentifier: fields.login
   })
 }
 
@@ -160,11 +162,7 @@ async function fetchBills(orders) {
       vendor,
       filename: `${formatDate(order.date)}-${vendor.toUpperCase()}-${
         order.amount
-      }EUR.pdf`,
-      metadata: {
-        importDate: new Date(),
-        version: 1
-      }
+      }EUR.pdf`
     }))
 }
 

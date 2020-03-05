@@ -7,7 +7,7 @@
   "slug": "cdiscount",
   "source": "git@github.com:konnectors/cdiscount.git",
   "editor": "Cozy",
-  "vendor_link": "https://clients.cdiscount.com/Account/Login.html",
+  "vendor_link": "https://order.cdiscount.com/Account/LoginLight.html",
   "categories": [
     "shopping"
   ],

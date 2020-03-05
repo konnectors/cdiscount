@@ -5,9 +5,7 @@ process.env.SENTRY_DSN =
 const {
   BaseKonnector,
   requestFactory,
-  signin,
   scrape,
-  saveBills,
   log
 } = require('cozy-konnector-libs')
 
@@ -25,7 +23,7 @@ const baseurl = 'https://clients.cdiscount.com'
 
 async function start(fields) {
   log('info', 'Authenticating ...')
-  await authenticate(fields.login, fields.password)
+  await authenticate.bind(this)(fields.login, fields.password)
   log('info', 'Successfully logged in')
 
   log('info', 'Fetching list of orders')
@@ -35,15 +33,13 @@ async function start(fields) {
   log('info', 'Fetching bills')
   const bills = await fetchBills(orders)
   log('info', 'Saving data to Cozy')
-  await saveBills(bills, fields.folderPath, {
-    identifiers: [vendor],
-    sourceAccount: this._account._id,
-    sourceAccountIdentifier: fields.login
+  await this.saveBills(bills, fields.folderPath, {
+    linkBankOperations: false
   })
 }
 
 async function authenticate(username, password) {
-  await signin({
+  await this.signin({
     requestInstance: request,
     url: `https://order.cdiscount.com/Account/LoginLight.html?referrer=`,
     formSelector: '#loginForm',

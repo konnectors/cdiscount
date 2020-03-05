@@ -12,15 +12,9 @@ const {
 } = require('cozy-konnector-libs')
 
 const request = requestFactory({
-  // the debug mode shows all the details about http request and responses. Very usefull for
-  // debugging but very verbose. That is why it is commented out by default
   // debug: true,
-  // activates [cheerio](https://cheerio.js.org/) parsing on each page
   cheerio: true,
-  // If cheerio is activated do not forget to deactivate json parsing (which is activated by
-  // default in cozy-konnector-libs
   json: false,
-  // this allows request-promise to keep cookies between requests
   jar: true
 })
 
@@ -49,17 +43,13 @@ async function start(fields) {
 }
 
 async function authenticate(username, password) {
-  const url = `${baseurl}/Account/Login.html`
-  // The cookie "__RequestVerificationToken" is required to log in. This first
-  // request is here for that reason.
-  await request(url)
-
-  return signin({
-    url,
+  await signin({
+    requestInstance: request,
+    url: `https://order.cdiscount.com/Account/LoginLight.html?referrer=`,
     formSelector: '#loginForm',
     formData: {
-      'LoginViewData.CustomerLoginFormData.Email': username,
-      'LoginViewData.CustomerLoginFormData.Password': password
+      'CustomerLogin.CustomerLoginFormData.Email': username,
+      'CustomerLogin.CustomerLoginFormData.Password': password
     },
     validate: (statusCode, $) => {
       const result = $('ul.error').length === 0
@@ -78,7 +68,7 @@ async function authenticate(username, password) {
 // CAVEAT: we do not have at our disposal an account where several items were
 // ordered at the same time.
 async function getSaleFolderIDs() {
-  const $ = await request(`${baseurl}/Order/OrdersTracking.html`)
+  const $ = await request(`${baseurl}/order/orderstracking.html`)
 
   return $('#OrderTrackingFormData_SaleFolderId option')
     .map(function(i, el) {
@@ -120,13 +110,17 @@ async function fetchOrder(saleFolderID) {
       },
       amount: {
         sel: '.czOrderHeaderBloc .czOrderHeaderBlocLeft',
-        fn: el =>
-          $(el)[0]
-            .children.find(el => el.type === 'text')
-            .data.split('€')[0]
-            .trim()
-            // The amount is written using the French convention.
-            .replace(',', '.')
+        fn: el => {
+          return (
+            $(el)[0]
+              .children.filter(el => el.type === 'text')
+              .map(el => el.data.trim())
+              .join('')
+              .split('€')[0]
+              // The amount is written using the French convention.
+              .replace(',', '.')
+          )
+        }
       },
       billPath: {
         sel: "a[title^='Imprimer']",

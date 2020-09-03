@@ -42,7 +42,7 @@ async function authenticate(username, password) {
   await this.signin({
     requestInstance: request,
     url: `https://order.cdiscount.com/Account/LoginLight.html?referrer=`,
-    formSelector: '#loginForm',
+    formSelector: '#LoginForm',
     formData: {
       'CustomerLogin.CustomerLoginFormData.Email': username,
       'CustomerLogin.CustomerLoginFormData.Password': password

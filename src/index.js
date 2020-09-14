@@ -9,11 +9,13 @@ const {
   log
 } = require('cozy-konnector-libs')
 
-const request = requestFactory({
+let request = requestFactory()
+const j = request.jar()
+request = requestFactory({
   // debug: true,
   cheerio: true,
   json: false,
-  jar: true
+  jar: j
 })
 
 module.exports = new BaseKonnector(start)
@@ -39,6 +41,14 @@ async function start(fields) {
 }
 
 async function authenticate(username, password) {
+  const $blankPageWithCode = await request(
+    `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
+  )
+  const code = $blankPageWithCode('script')
+    .html()
+    .match(/js=(.*);max-age=/)[1]
+  const cookie = request.cookie(`js=${code}`)
+  j.setCookie(cookie, 'https://order.cdiscount.com')
   await this.signin({
     requestInstance: request,
     url: `https://order.cdiscount.com/Account/LoginLight.html?referrer=`,
@@ -150,6 +160,9 @@ async function fetchBills(orders) {
       currency: '€',
       fileurl: `${baseurl}${order.billPath}`,
       vendor,
+      requestOptions: {
+        jar: j
+      },
       filename: `${formatDate(order.date)}-${vendor.toUpperCase()}-${
         order.amount
       }EUR.pdf`

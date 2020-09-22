@@ -41,14 +41,14 @@ async function start(fields) {
 }
 
 async function authenticate(username, password) {
-  // const $blankPageWithCode = await request(
-  //   `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
-  // )
-  // const code = $blankPageWithCode('script')
-  //   .html()
-  //   .match(/js=(.*);max-age=/)[1]
-  // const cookie = request.cookie(`js=${code}`)
-  // j.setCookie(cookie, 'https://order.cdiscount.com')
+  const $blankPageWithCode = await request(
+    `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
+  )
+  const code = $blankPageWithCode('script')
+    .html()
+    .match(/js=(.*);max-age=/)[1]
+  const cookie = request.cookie(`js=${code}`)
+  j.setCookie(cookie, 'https://order.cdiscount.com')
   await this.signin({
     requestInstance: request,
     url: `https://order.cdiscount.com/Account/LoginLight.html?referrer=`,

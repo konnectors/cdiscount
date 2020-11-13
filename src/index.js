@@ -44,13 +44,21 @@ async function authenticate(username, password) {
   const $blankPageWithCode = await request(
     `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
   )
-  const matched = $blankPageWithCode('script')
+  const jsMatched = $blankPageWithCode
     .html()
-    .match(/js=(.*);max-age=/)
-  if (matched && matched[1]) {
+    .match(/document.cookie="js=(.*);"/)
+  const challengeMatched = $blankPageWithCode
+    .html()
+    .match(/document.cookie="challenge=(.*);"/)
+  if (jsMatched && jsMatched[1]) {
     log('info', 'found a js cookie')
-    const code = matched[1]
+    const code = jsMatched[1].split(';')[0]
     const cookie = request.cookie(`js=${code}`)
+    j.setCookie(cookie, 'https://order.cdiscount.com')
+  } else if (challengeMatched && challengeMatched[1]) {
+    log('info', 'found a challenge cookie')
+    const code = challengeMatched[1].split(';')[0]
+    const cookie = request.cookie(`challenge=${code}`)
     j.setCookie(cookie, 'https://order.cdiscount.com')
   }
   await this.signin({

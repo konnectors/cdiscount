@@ -51,17 +51,19 @@ async function authenticate(username, password) {
   const challengeMatched = $blankPageWithCode
     .html()
     .match(/document.cookie="challenge=(.*);"/)
-  if (jsMatched && jsMatched[1]) {
-    log('info', 'found a js cookie')
-    const code = jsMatched[1].split(';')[0]
-    const cookie = request.cookie(`js=${code}`)
-    j.setCookie(cookie, 'https://order.cdiscount.com')
-  } else if (challengeMatched && challengeMatched[1]) {
+  if (challengeMatched && challengeMatched[1]) {
     log('info', 'found a challenge cookie')
     const code = challengeMatched[1].split(';')[0]
     const cookie = request.cookie(`challenge=${code}`)
     j.setCookie(cookie, 'https://order.cdiscount.com')
   }
+  if (jsMatched && jsMatched[1]) {
+    log('info', 'found a js cookie')
+    const code = jsMatched[1].split(';')[0]
+    const cookie = request.cookie(`js=${code}`)
+    j.setCookie(cookie, 'https://order.cdiscount.com')
+  }
+
   await this.signin({
     requestInstance: request,
     url: `https://order.cdiscount.com/Account/LoginLight.html?referrer=`,

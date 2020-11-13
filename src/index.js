@@ -35,8 +35,9 @@ async function start(fields) {
   log('info', 'Fetching bills')
   const bills = await fetchBills(orders)
   log('info', 'Saving data to Cozy')
-  await this.saveBills(bills, fields.folderPath, {
-    linkBankOperations: false
+  await this.saveBills(bills, fields, {
+    linkBankOperations: false,
+    fileIdAttributes: ['vendorRef']
   })
 }
 
@@ -125,6 +126,14 @@ async function fetchOrder(saleFolderID) {
       // processing is required before using it.
       description: {
         sel: '.czPrdDesc strong'
+      },
+      vendorRef: {
+        sel: '.czOrderCustomerReference',
+        parse: ref =>
+          ref
+            .split(':')
+            .pop()
+            .trim()
       },
       amount: {
         sel: '.czOrderHeaderBloc .czOrderHeaderBlocLeft',

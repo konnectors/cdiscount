@@ -43,6 +43,9 @@
     "files": {
       "type": "io.cozy.files"
     },
+    "carbon_copy": {
+      "type": "io.cozy.certified.carbon_copy"
+    },
     "accounts": {
       "type": "io.cozy.accounts"
     }
@@ -96,7 +99,8 @@
   "banksTransactionRegExp": "\\bcdiscount\\b",
   "features": [
     "LOGIN_OK",
-    "METADATA_DEDUP"
+    "METADATA_DEDUP",
+    "CARBON_COPY"
   ],
   "manifest_version": "2"
 }

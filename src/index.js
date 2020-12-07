@@ -188,7 +188,12 @@ async function fetchBills(orders) {
       },
       filename: `${formatDate(order.date)}-${vendor.toUpperCase()}-${
         order.amount
-      }EUR.pdf`
+      }EUR.pdf`,
+      fileAttributes: {
+        metadata: {
+          carbonCopy: true
+        }
+      }
     }))
 }
 

@@ -100,7 +100,8 @@
   "features": [
     "LOGIN_OK",
     "METADATA_DEDUP",
-    "CARBON_COPY"
+    "CARBON_COPY",
+    "PROXY"
   ],
   "manifest_version": "2"
 }

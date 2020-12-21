@@ -6,7 +6,9 @@ const {
   BaseKonnector,
   requestFactory,
   scrape,
-  log
+  log,
+  errors,
+  solveCaptcha
 } = require('cozy-konnector-libs')
 
 let request = requestFactory()
@@ -15,7 +17,11 @@ request = requestFactory({
   // debug: true,
   cheerio: true,
   json: false,
-  jar: j
+  jar: j,
+  insecureHTTPParser: true, // cdiscount sends bad headers sometimes which are not recognized by node
+  headers: {
+    Referer: 'https://clients.cdiscount.com/account/home.html'
+  }
 })
 
 module.exports = new BaseKonnector(start)
@@ -45,6 +51,14 @@ async function authenticate(username, password) {
   const $blankPageWithCode = await request(
     `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
   )
+
+  const errorElement = $blankPageWithCode(`table[summary='Reputation Error']`)
+
+  if (errorElement.length) {
+    log('error', errorElement.text())
+    throw new Error(errors.VENDOR_DOWN)
+  }
+
   const jsMatched = $blankPageWithCode
     .html()
     .match(/document.cookie="js=(.*);"/)
@@ -64,7 +78,25 @@ async function authenticate(username, password) {
     j.setCookie(cookie, 'https://order.cdiscount.com')
   }
 
+  const $formpage = await request(
+    `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
+  )
+
+  const isCaptcha = Boolean($formpage('form#captcha-form').length)
+  if (isCaptcha) {
+    const websiteKey = $formpage('.g-recaptcha').data('sitekey')
+    const websiteURL =
+      'https://order.cdiscount.com/Account/LoginLight.html?referrer='
+    const captchaToken = await solveCaptcha({ websiteURL, websiteKey })
+    await request.post(websiteURL, {
+      form: {
+        'g-recaptcha-response': captchaToken
+      }
+    })
+  }
+
   await this.signin({
+    // debug: true,
     requestInstance: request,
     url: `https://order.cdiscount.com/Account/LoginLight.html?referrer=`,
     formSelector: '#LoginForm',

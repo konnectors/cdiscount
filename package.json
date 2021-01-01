@@ -1,6 +1,6 @@
 {
   "name": "cozy-konnector-cdiscount",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "",
   "repository": {
     "type": "git",
@@ -39,7 +39,7 @@
     "cozy-konnector-libs": "4.38.0"
   },
   "devDependencies": {
-    "cozy-jobs-cli": "1.15.3",
+    "cozy-jobs-cli": "1.15.4",
     "cozy-konnector-build": "1.1.3"
   }
 }

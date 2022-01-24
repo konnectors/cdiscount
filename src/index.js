@@ -6,15 +6,15 @@ const {
   BaseKonnector,
   requestFactory,
   scrape,
-  log,
-  errors,
-  solveCaptcha
+  log
+  // errors,
+  // solveCaptcha
 } = require('cozy-konnector-libs')
 
 let request = requestFactory()
 const j = request.jar()
 request = requestFactory({
-  // debug: true,
+  debug: true,
   cheerio: true,
   json: false,
   jar: j,
@@ -48,55 +48,49 @@ async function start(fields) {
 }
 
 async function authenticate(username, password) {
-  const $blankPageWithCode = await request(
-    `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
-  )
+  const loginReq =
+    'https://order.cdiscount.com/Account/LoginLight.html?referrer='
+  const challenge = await fetchChallengeCookie(loginReq)
+  const splitChallenge = challenge.split('=')
+  j.setCookie(challenge, 'https://order.cdiscount.com')
+  // const $blankPageWithCode = await request(
+  //   `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
+  // )
 
-  const errorElement = $blankPageWithCode(`table[summary='Reputation Error']`)
+  // const errorElement = $blankPageWithCode(`table[summary='Reputation Error']`)
+  // let challengeCookie
 
-  if (errorElement.length) {
-    log('error', errorElement.text())
-    throw new Error(errors.VENDOR_DOWN)
-  }
+  // if (errorElement.length) {
+  //   log('error', errorElement.text())
+  //   throw new Error(errors.VENDOR_DOWN)
+  // }
+  // const challengeMatched = $blankPageWithCode
+  //   .html()
+  //   .match(/"challenge=([a-zA-Z0-9-_]*)"+/g)
+  // if (challengeMatched && challengeMatched[1]) {
+  //   log('info', 'found a challenge cookie')
+  //   const cookie = challengeMatched[0].replace(/"/g, '')
+  //   const cookieSet = request.cookie(`${cookie}`)
+  //   challengeCookie = cookieSet
+  //   j.setCookie(cookieSet, 'https://order.cdiscount.com')
+  // }
 
-  const jsMatched = $blankPageWithCode
-    .html()
-    .match(/document.cookie="js=(.*);"/)
-  const challengeMatched = $blankPageWithCode
-    .html()
-    .match(/document.cookie="challenge=(.*);"/)
-  if (challengeMatched && challengeMatched[1]) {
-    log('info', 'found a challenge cookie')
-    const code = challengeMatched[1].split(';')[0]
-    const cookie = request.cookie(`challenge=${code}`)
-    j.setCookie(cookie, 'https://order.cdiscount.com')
-  }
-  if (jsMatched && jsMatched[1]) {
-    log('info', 'found a js cookie')
-    const code = jsMatched[1].split(';')[0]
-    const cookie = request.cookie(`js=${code}`)
-    j.setCookie(cookie, 'https://order.cdiscount.com')
-  }
-
-  const $formpage = await request(
-    `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
-  )
-
-  const isCaptcha = Boolean($formpage('form#captcha-form').length)
-  if (isCaptcha) {
-    const websiteKey = $formpage('.g-recaptcha').data('sitekey')
-    const websiteURL =
-      'https://order.cdiscount.com/Account/LoginLight.html?referrer='
-    const captchaToken = await solveCaptcha({ websiteURL, websiteKey })
-    await request.post(websiteURL, {
-      form: {
-        'g-recaptcha-response': captchaToken
-      }
-    })
-  }
-
+  // const $formpage = await request(
+  //   `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
+  // )
+  // const isCaptcha = Boolean($formpage('form#captcha-form').length)
+  // if (isCaptcha) {
+  //   const websiteKey = $formpage('.g-recaptcha').data('sitekey')
+  //   const websiteURL =
+  //     'https://order.cdiscount.com/Account/LoginLight.html?referrer='
+  //   const captchaToken = await solveCaptcha({ websiteURL, websiteKey })
+  //   await request.post(websiteURL, {
+  //     form: {
+  //       'g-recaptcha-response': captchaToken
+  //     }
+  //   })
+  // }
   await this.signin({
-    // debug: true,
     requestInstance: request,
     url: `https://order.cdiscount.com/Account/LoginLight.html?referrer=`,
     formSelector: '#LoginForm',
@@ -104,13 +98,17 @@ async function authenticate(username, password) {
       'CustomerLogin.CustomerLoginFormData.Email': username,
       'CustomerLogin.CustomerLoginFormData.Password': password
     },
+    Headers: {
+      cookie: {
+        challenge: `${splitChallenge[1]}`
+      }
+    },
     validate: (statusCode, $) => {
       const result = $('ul.error').length === 0
 
       if (!result) {
         log('error', $('ul.error').text())
       }
-
       return result
     }
   })
@@ -121,7 +119,19 @@ async function authenticate(username, password) {
 // CAVEAT: we do not have at our disposal an account where several items were
 // ordered at the same time.
 async function getSaleFolderIDs() {
-  const $ = await request(`${baseurl}/order/orderstracking.html`)
+  const url = `${baseurl}/order/orderstracking.html`
+  const challenge = await fetchChallengeCookie(url)
+  const splitChallenge = challenge.split('=')
+  j.setCookie(challenge, 'https://order.cdiscount.com')
+
+  const $ = await request({
+    url: `${baseurl}/order/orderstracking.html`,
+    Headers: {
+      cookie: {
+        challenge: `${splitChallenge[1]}`
+      }
+    }
+  })
 
   return $('#OrderTrackingFormData_SaleFolderId option')
     .map(function(i, el) {
@@ -252,4 +262,11 @@ function formatDate(date) {
   let year = date.getFullYear()
 
   return `${year}${month}${day}`
+}
+
+async function fetchChallengeCookie(url) {
+  const wantedUrl = await request(`${url}`)
+  const parseCookie = wantedUrl.html().match(/"challenge=([a-zA-Z0-9-_]*)"+/g)
+  const wantedCookie = parseCookie[0].replace(/"/g, '')
+  return wantedCookie
 }

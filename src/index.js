@@ -6,9 +6,7 @@ const {
   BaseKonnector,
   requestFactory,
   scrape,
-  log,
-  errors,
-  solveCaptcha
+  log
 } = require('cozy-konnector-libs')
 
 let request = requestFactory()
@@ -30,14 +28,19 @@ const vendor = 'cdiscount'
 const baseurl = 'https://clients.cdiscount.com'
 
 async function start(fields) {
+  const challengeToken = await fetchChallengeCookie(
+    `${baseurl}/Account/LoginLight.html?referrer=`
+  )
+  j.setCookie(challengeToken, 'https://order.cdiscount.com')
+
   log('info', 'Authenticating ...')
   await authenticate.bind(this)(fields.login, fields.password)
   log('info', 'Successfully logged in')
 
   log('info', 'Fetching list of orders')
-  const saleFolderIDs = await getSaleFolderIDs()
+  const saleFolderIDs = await getSaleFolderIDs(challengeToken)
   log('info', 'Fetching orders')
-  const orders = await fetchAllOrders(saleFolderIDs)
+  const orders = await fetchAllOrders(saleFolderIDs, challengeToken)
   log('info', 'Fetching bills')
   const bills = await fetchBills(orders)
   log('info', 'Saving data to Cozy')
@@ -48,55 +51,7 @@ async function start(fields) {
 }
 
 async function authenticate(username, password) {
-  const $blankPageWithCode = await request(
-    `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
-  )
-
-  const errorElement = $blankPageWithCode(`table[summary='Reputation Error']`)
-
-  if (errorElement.length) {
-    log('error', errorElement.text())
-    throw new Error(errors.VENDOR_DOWN)
-  }
-
-  const jsMatched = $blankPageWithCode
-    .html()
-    .match(/document.cookie="js=(.*);"/)
-  const challengeMatched = $blankPageWithCode
-    .html()
-    .match(/document.cookie="challenge=(.*);"/)
-  if (challengeMatched && challengeMatched[1]) {
-    log('info', 'found a challenge cookie')
-    const code = challengeMatched[1].split(';')[0]
-    const cookie = request.cookie(`challenge=${code}`)
-    j.setCookie(cookie, 'https://order.cdiscount.com')
-  }
-  if (jsMatched && jsMatched[1]) {
-    log('info', 'found a js cookie')
-    const code = jsMatched[1].split(';')[0]
-    const cookie = request.cookie(`js=${code}`)
-    j.setCookie(cookie, 'https://order.cdiscount.com')
-  }
-
-  const $formpage = await request(
-    `https://order.cdiscount.com/Account/LoginLight.html?referrer=`
-  )
-
-  const isCaptcha = Boolean($formpage('form#captcha-form').length)
-  if (isCaptcha) {
-    const websiteKey = $formpage('.g-recaptcha').data('sitekey')
-    const websiteURL =
-      'https://order.cdiscount.com/Account/LoginLight.html?referrer='
-    const captchaToken = await solveCaptcha({ websiteURL, websiteKey })
-    await request.post(websiteURL, {
-      form: {
-        'g-recaptcha-response': captchaToken
-      }
-    })
-  }
-
   await this.signin({
-    // debug: true,
     requestInstance: request,
     url: `https://order.cdiscount.com/Account/LoginLight.html?referrer=`,
     formSelector: '#LoginForm',
@@ -110,7 +65,6 @@ async function authenticate(username, password) {
       if (!result) {
         log('error', $('ul.error').text())
       }
-
       return result
     }
   })
@@ -120,8 +74,13 @@ async function authenticate(username, password) {
 //
 // CAVEAT: we do not have at our disposal an account where several items were
 // ordered at the same time.
-async function getSaleFolderIDs() {
-  const $ = await request(`${baseurl}/order/orderstracking.html`)
+async function getSaleFolderIDs(challengeToken) {
+  const $ = await request({
+    url: `${baseurl}/order/orderstracking.html`,
+    headers: {
+      cookie: `${challengeToken}`
+    }
+  })
 
   return $('#OrderTrackingFormData_SaleFolderId option')
     .map(function(i, el) {
@@ -130,22 +89,25 @@ async function getSaleFolderIDs() {
     .get()
 }
 
-async function fetchAllOrders(saleFolderIDs) {
+async function fetchAllOrders(saleFolderIDs, challengeToken) {
   const orders = []
   for (let saleFolderID of saleFolderIDs) {
-    orders.push(await fetchOrder(saleFolderID))
+    orders.push(await fetchOrder(saleFolderID, challengeToken))
   }
 
   return orders
 }
 
-async function fetchOrder(saleFolderID) {
+async function fetchOrder(saleFolderID, challengeToken) {
   // First request to change the order that is currently displayed.
   var options = {
     method: 'POST',
     uri: `${baseurl}/Order/OrderTracking.html`,
     formData: {
       'OrderTrackingFormData.SaleFolderId': saleFolderID
+    },
+    headers: {
+      cookie: `${challengeToken}`
     }
   }
 
@@ -252,4 +214,11 @@ function formatDate(date) {
   let year = date.getFullYear()
 
   return `${year}${month}${day}`
+}
+
+async function fetchChallengeCookie(url) {
+  const wantedUrl = await request(`${url}`)
+  const parseCookie = wantedUrl.html().match(/"challenge=([a-zA-Z0-9-_]*)"+/g)
+  const wantedCookie = parseCookie[0].replace(/"/g, '')
+  return wantedCookie
 }

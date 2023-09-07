@@ -1,224 +1,137 @@
-process.env.SENTRY_DSN =
-  process.env.SENTRY_DSN ||
-  'https://c76a294b95744d2cbd8bbf52cb13cd5f:7d6b141aa5fd41b882cf12088683b30a@sentry.cozycloud.cc/51'
+import { ContentScript } from 'cozy-clisk/dist/contentscript'
+import Minilog from '@cozy/minilog'
+const log = Minilog('ContentScript')
+Minilog.enable()
 
-const {
-  BaseKonnector,
-  requestFactory,
-  scrape,
-  log
-} = require('cozy-konnector-libs')
+const baseUrl = 'https://toscrape.com'
+const defaultSelector = "a[href='http://quotes.toscrape.com']"
+const loginLinkSelector = `[href='/login']`
+const logoutLinkSelector = `[href='/logout']`
 
-let request = requestFactory()
-const j = request.jar()
-request = requestFactory({
-  // debug: true,
-  cheerio: true,
-  json: false,
-  jar: j,
-  insecureHTTPParser: true, // cdiscount sends bad headers sometimes which are not recognized by node
-  headers: {
-    Referer: 'https://clients.cdiscount.com/account/home.html'
+class TemplateContentScript extends ContentScript {
+  async navigateToLoginForm() {
+    this.log('info', '🤖 navigateToLoginForm')
+    await this.goto(baseUrl)
+    await this.waitForElementInWorker(defaultSelector)
+    await this.runInWorker('click', defaultSelector)
+    // wait for both logout or login link to be sure to check authentication when ready
+    await Promise.race([
+      this.waitForElementInWorker(loginLinkSelector),
+      this.waitForElementInWorker(logoutLinkSelector)
+    ])
   }
-})
 
-module.exports = new BaseKonnector(start)
+  onWorkerEvent({ event, payload }) {
+    if (event === 'loginSubmit') {
+      this.log('info', 'received loginSubmit, blocking user interactions')
+      this.blockWorkerInteractions()
+    } else if (event === 'loginError') {
+      this.log(
+        'info',
+        'received loginError, unblocking user interactions: ' + payload?.msg
+      )
+      this.unblockWorkerInteractions()
+    }
+  }
 
-const vendor = 'cdiscount'
-const baseurl = 'https://clients.cdiscount.com'
+  async ensureAuthenticated({ account }) {
+    this.bridge.addEventListener('workerEvent', this.onWorkerEvent.bind(this))
+    this.log('info', '🤖 ensureAuthenticated')
+    if (!account) {
+      await this.ensureNotAuthenticated()
+    }
+    await this.navigateToLoginForm()
+    const authenticated = await this.runInWorker('checkAuthenticated')
+    if (!authenticated) {
+      this.log('info', 'Not authenticated')
+      await this.showLoginFormAndWaitForAuthentication()
+    }
+    this.unblockWorkerInteractions()
+    return true
+  }
 
-async function start(fields) {
-  const challengeToken = await fetchChallengeCookie(
-    `${baseurl}/Account/LoginLight.html?referrer=`
-  )
-  j.setCookie(challengeToken, 'https://order.cdiscount.com')
+  async ensureNotAuthenticated() {
+    this.log('info', '🤖 ensureNotAuthenticated')
+    await this.navigateToLoginForm()
+    const authenticated = await this.runInWorker('checkAuthenticated')
+    if (!authenticated) {
+      return true
+    }
 
-  log('info', 'Authenticating ...')
-  await authenticate.bind(this)(fields.login, fields.password)
-  log('info', 'Successfully logged in')
+    await this.clickAndWait(logoutLinkSelector, loginLinkSelector)
+    return true
+  }
 
-  log('info', 'Fetching list of orders')
-  const saleFolderIDs = await getSaleFolderIDs(challengeToken)
-  log('info', 'Fetching orders')
-  const orders = await fetchAllOrders(saleFolderIDs, challengeToken)
-  log('info', 'Fetching bills')
-  const bills = await fetchBills(orders)
-  log('info', 'Saving data to Cozy')
-  await this.saveBills(bills, fields, {
-    linkBankOperations: false,
-    fileIdAttributes: ['vendorRef']
-  })
-}
-
-async function authenticate(username, password) {
-  await this.signin({
-    requestInstance: request,
-    url: `https://order.cdiscount.com/Account/LoginLight.html?referrer=`,
-    formSelector: '#LoginForm',
-    formData: {
-      'CustomerLogin.CustomerLoginFormData.Email': username,
-      'CustomerLogin.CustomerLoginFormData.Password': password
-    },
-    validate: (statusCode, $) => {
-      const result = $('ul.error').length === 0
-
-      if (!result) {
-        log('error', $('ul.error').text())
+  onWorkerReady() {
+    window.addEventListener('DOMContentLoaded', () => {
+      const button = document.querySelector('input[type=submit]')
+      if (button) {
+        button.addEventListener('click', () =>
+          this.bridge.emit('workerEvent', { event: 'loginSubmit' })
+        )
       }
-      return result
-    }
-  })
-}
-
-// There is a form through which we access all the orders.
-//
-// CAVEAT: we do not have at our disposal an account where several items were
-// ordered at the same time.
-async function getSaleFolderIDs(challengeToken) {
-  const $ = await request({
-    url: `${baseurl}/order/orderstracking.html`,
-    headers: {
-      cookie: `${challengeToken}`
-    }
-  })
-
-  return $('#OrderTrackingFormData_SaleFolderId option')
-    .map(function(i, el) {
-      return $(el).attr('value')
+      const error = document.querySelector('.error')
+      if (error) {
+        this.bridge.emit('workerEvent', {
+          event: 'loginError',
+          payload: { msg: error.innerHTML }
+        })
+      }
     })
-    .get()
-}
-
-async function fetchAllOrders(saleFolderIDs, challengeToken) {
-  const orders = []
-  for (let saleFolderID of saleFolderIDs) {
-    orders.push(await fetchOrder(saleFolderID, challengeToken))
   }
 
-  return orders
-}
+  async checkAuthenticated() {
+    return Boolean(document.querySelector(logoutLinkSelector))
+  }
 
-async function fetchOrder(saleFolderID, challengeToken) {
-  // First request to change the order that is currently displayed.
-  var options = {
-    method: 'POST',
-    uri: `${baseurl}/Order/OrderTracking.html`,
-    formData: {
-      'OrderTrackingFormData.SaleFolderId': saleFolderID
-    },
-    headers: {
-      cookie: `${challengeToken}`
+  async showLoginFormAndWaitForAuthentication() {
+    log.debug('showLoginFormAndWaitForAuthentication start')
+    await this.clickAndWait(loginLinkSelector, '#username')
+    await this.setWorkerState({ visible: true })
+    await this.runInWorkerUntilTrue({
+      method: 'waitForAuthenticated'
+    })
+    await this.setWorkerState({ visible: false })
+  }
+
+  async fetch(context) {
+    this.log('info', '🤖 fetch')
+    await this.goto('https://books.toscrape.com')
+    await this.waitForElementInWorker('#promotions')
+    const bills = await this.runInWorker('parseBills')
+
+    await this.saveFiles(bills, {
+      contentType: 'image/jpeg',
+      fileIdAttributes: ['filename'],
+      context
+    })
+  }
+
+  async getUserDataFromWebsite() {
+    this.log('info', '🤖 getUserDataFromWebsite')
+    return {
+      sourceAccountIdentifier: 'defaultTemplateSourceAccountIdentifier'
     }
   }
 
-  const $ = await request(options)
-
-  let order = scrape(
-    $,
-    {
-      // CAVEAT: What description should we put in case there are several items
-      // linked to a single order?
-      // CAVEAT: The description is a sentence, thus it contains spaces. Some
-      // processing is required before using it.
-      description: {
-        sel: '.czPrdDesc strong'
-      },
-      vendorRef: {
-        sel: '.czOrderCustomerReference',
-        parse: ref =>
-          ref
-            .split(':')
-            .pop()
-            .trim()
-      },
-      amount: {
-        sel: '.czOrderHeaderBloc .czOrderHeaderBlocLeft',
-        fn: el => {
-          return (
-            $(el)[0]
-              .children.filter(el => el.type === 'text')
-              .map(el => el.data.trim())
-              .join('')
-              .split('€')[0]
-              // The amount is written using the French convention.
-              .replace(',', '.')
-          )
-        }
-      },
-      billPath: {
-        sel: "a[title^='Imprimer']",
-        attr: 'href'
-      },
-      date: {
-        sel: `#OrderTrackingFormData_SaleFolderId option[value='${saleFolderID}']`,
-        parse: text =>
-          text
-            .split(' - ')[0]
-            .trim()
-            .replace(/\//g, '-')
-      }
-    },
-    '#czCt'
-  )[0] // scrape returns an array while here there is only one element.
-
-  order.amount = parseFloat(order.amount)
-  order.date = normalizeDate(order.date)
-
-  return order
-}
-
-async function fetchBills(orders) {
-  // Some orders may have been canceled leading to an empty billPath. We filter
-  // them out.
-  return orders
-    .filter(order => order.billPath)
-    .map(order => ({
-      ...order,
-      currency: '€',
-      fileurl: `${baseurl}${order.billPath}`,
-      vendor,
-      requestOptions: {
-        jar: j
-      },
-      filename: `${formatDate(order.date)}-${vendor.toUpperCase()}-${
-        order.amount
-      }EUR.pdf`,
-      fileAttributes: {
-        metadata: {
-          carbonCopy: true
-        }
-      }
+  async parseBills() {
+    const articles = document.querySelectorAll('article')
+    return Array.from(articles).map(article => ({
+      amount: normalizePrice(article.querySelector('.price_color')?.innerHTML),
+      filename: article.querySelector('h3 a')?.getAttribute('title'),
+      fileurl:
+        'https://books.toscrape.com/' +
+        article.querySelector('img')?.getAttribute('src')
     }))
-}
-
-// In CDiscount the date has the format "DD-MM-YYYY", this function parses it
-// and returns a JavaScript date object.
-function normalizeDate(date) {
-  let [day, month, year] = date.split('-')
-  return new Date(`${year}-${month}-${day}`)
-}
-
-// Return a string representation of the date that follows this format:
-// "YYYY-MM-DD". Leading "0" for the day and the month are added if needed.
-function formatDate(date) {
-  let month = date.getMonth() + 1
-  if (month < 10) {
-    month = '0' + month
   }
-
-  let day = date.getDate()
-  if (day < 10) {
-    day = '0' + day
-  }
-
-  let year = date.getFullYear()
-
-  return `${year}${month}${day}`
 }
 
-async function fetchChallengeCookie(url) {
-  const wantedUrl = await request(`${url}`)
-  const parseCookie = wantedUrl.html().match(/"challenge=([a-zA-Z0-9-_]*)"+/g)
-  const wantedCookie = parseCookie[0].replace(/"/g, '')
-  return wantedCookie
+// Convert a price string to a float
+function normalizePrice(price) {
+  return parseFloat(price.replace('£', '').trim())
 }
+
+const connector = new TemplateContentScript()
+connector.init({ additionalExposedMethodsNames: ['parseBills'] }).catch(err => {
+  log.warn(err)
+})

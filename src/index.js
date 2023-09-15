@@ -119,7 +119,7 @@ class CdiscountContentScript extends ContentScript {
     await this.runInWorker('getEmailAndBirthDate')
     await this.clickAndWait(
       'a[href="https://clients.cdiscount.com/account/customeraddresses.html"]',
-      '#CustomerAddressesFormData_FirstName'
+      'a[data-layer-name="layer-update-address-0"]'
     )
     await this.runInWorker('getIdentity', this.store.emailAndBirthDate)
     if (this.store.userIdentity.email[0]?.address) {
@@ -141,6 +141,7 @@ class CdiscountContentScript extends ContentScript {
       this.log('info', 'Saving identity ...')
       await this.saveIdentity({ contact: this.store.userIdentity })
     }
+    await this.navigateToBillsPage()
     await this.waitForElementInWorker('[pause]')
   }
 
@@ -169,24 +170,44 @@ class CdiscountContentScript extends ContentScript {
 
   async getIdentity(emailAndBirthDate) {
     this.log('info', '📍️ getIdentity starts')
-    const sharedId = '#CustomerAddressesFormData_'
-    const familyName = document.querySelector(`${sharedId}LastName`).value
-    const givenName = document.querySelector(`${sharedId}FirstName`).value
+    const sharedId = 'CustomerAddressesFormData.'
+    const familyName = document.querySelector(
+      `input[name="${sharedId}LastName"]`
+    )?.value
+    const givenName = document.querySelector(
+      `input[name="${sharedId}FirstName"]`
+    )?.value
     const streetAndStreetNumber = document.querySelector(
-      `${sharedId}Address`
+      `input[name="${sharedId}Address"]`
     ).value
-    const building = document.querySelector(`${sharedId}Build`).value
-    const appartement = document.querySelector(`${sharedId}Appartment`).value
-    const locality = document.querySelector(`${sharedId}PostalLocality`).value
+    const building = document.querySelector(
+      `input[name="${sharedId}Build"]`
+    )?.value
+    const appartement = document.querySelector(
+      `input[name="${sharedId}Appartment"]`
+    )?.value
+    const locality = document.querySelector(
+      `input[name="${sharedId}PostalLocality"]`
+    )?.value
     const addressComplement = document.querySelector(
-      `${sharedId}AdditionalAddress`
-    ).value
-    const companyName = document.querySelector(`${sharedId}CompanyName`).value
-    const postCode = document.querySelector(`${sharedId}PostalCode`).value
-    const city = document.querySelector(`${sharedId}City`).value
-    const country = document.querySelector(`${sharedId}Country`).value
-    const mobileNumber = document.querySelector(`${sharedId}Mobile`).value
-    const phoneNumber = document.querySelector(`${sharedId}Phone`).value
+      `input[name="${sharedId}AdditionalAddress"]`
+    )?.value
+    const companyName = document.querySelector(
+      `input[name="${sharedId}CompanyName"]`
+    )?.value
+    const postCode = document.querySelector(
+      `input[name="${sharedId}PostalCode"]`
+    )?.value
+    const city = document.querySelector(`input[name="${sharedId}City"]`)?.value
+    const country = document.querySelector(
+      `input[name="${sharedId}Country"]`
+    )?.value
+    const mobileNumber = document.querySelector(
+      `input[name="${sharedId}Mobile"]`
+    )?.value
+    const phoneNumber = document.querySelector(
+      `input[name="${sharedId}Phone"]`
+    )?.value
     const userIdentity = {
       email: [{ address: emailAndBirthDate.email }],
       name: {
@@ -197,13 +218,13 @@ class CdiscountContentScript extends ContentScript {
       phone: [],
       birthDate: emailAndBirthDate.birthDate
     }
-    if (mobileNumber !== '') {
+    if (mobileNumber !== '' && mobileNumber !== undefined) {
       userIdentity.phone.push({
         type: 'mobile',
         number: mobileNumber
       })
     }
-    if (phoneNumber !== '') {
+    if (phoneNumber !== '' && phoneNumber !== undefined) {
       userIdentity.phone.push({
         type: 'home',
         number: phoneNumber
@@ -228,44 +249,58 @@ class CdiscountContentScript extends ContentScript {
     this.log('info', '📍️ getAddress starts')
     let constructedAddress = ''
     const address = {}
-    if (infos.streetAndStreetNumber !== '') {
+    if (
+      infos.streetAndStreetNumber !== undefined &&
+      infos.streetAndStreetNumber !== ''
+    ) {
       constructedAddress += infos.streetAndStreetNumber
       address.street = infos.streetAndStreetNumber
     }
-    if (infos.building !== '') {
+    if (infos.building !== undefined && infos.building !== '') {
       constructedAddress += ` ${infos.building}`
       address.building = infos.building
     }
-    if (infos.appartement !== '') {
+    if (infos.appartement !== undefined && infos.appartement !== '') {
       constructedAddress += ` ${infos.appartement}`
       address.appartement = infos.appartement
     }
-    if (infos.locality !== '') {
+    if (infos.locality !== undefined && infos.locality !== '') {
       constructedAddress += ` ${infos.locality}`
       address.locality = infos.locality
     }
-    if (infos.addressComplement !== '') {
+    if (
+      infos.addressComplement !== undefined &&
+      infos.addressComplement !== ''
+    ) {
       constructedAddress += ` ${infos.addressComplement}`
       address.complement = infos.addressComplement
     }
-    if (infos.companyName !== '') {
+    if (infos.companyName !== undefined && infos.companyName !== '') {
       constructedAddress += ` ${infos.companyName}`
       address.companyName = infos.companyName
     }
-    if (infos.postCode !== '') {
+    if (infos.postCode !== undefined && infos.postCode !== '') {
       constructedAddress += ` ${infos.postCode}`
       address.postCode = infos.postCode
     }
-    if (infos.city !== '') {
+    if (infos.city !== undefined && infos.city !== '') {
       constructedAddress += ` ${infos.city}`
       address.city = infos.city
     }
-    if (infos.country !== '') {
+    if (infos.country !== undefined && infos.country !== '') {
       constructedAddress += ` ${infos.country}`
       address.country = infos.country
     }
     address.formattedAddress = constructedAddress
     return address
+  }
+
+  async navigateToBillsPage() {
+    this.log('info', '📍️ navigateToBillsPage starts')
+    await this.clickAndWait(
+      'a[href="https://clients.cdiscount.com/order/orderstracking.html"]',
+      '#orderdetails'
+    )
   }
 }
 

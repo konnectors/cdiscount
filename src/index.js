@@ -1,9 +1,12 @@
 import { ContentScript } from 'cozy-clisk/dist/contentscript'
 import Minilog from '@cozy/minilog'
+import waitFor from 'p-wait-for'
+import { parse, format } from 'date-fns'
+import { fr } from 'date-fns/locale'
 const log = Minilog('ContentScript')
 Minilog.enable('cdiscountCCC')
 
-const baseUrl = 'https://cdiscount.com'
+// const baseUrl = 'https://cdiscount.com'
 const loginFormUrl =
   'https://order.cdiscount.com/Phone/Account/LoginLight.html?referrer='
 
@@ -55,8 +58,8 @@ class CdiscountContentScript extends ContentScript {
   }
 
   async ensureAuthenticated({ account }) {
-    this.bridge.addEventListener('workerEvent', this.onWorkerEvent.bind(this))
     this.log('info', '🤖 ensureAuthenticated')
+    this.bridge.addEventListener('workerEvent', this.onWorkerEvent.bind(this))
     // if (!account) {
     //   await this.ensureNotAuthenticated()
     // }
@@ -142,7 +145,7 @@ class CdiscountContentScript extends ContentScript {
       await this.saveIdentity({ contact: this.store.userIdentity })
     }
     await this.navigateToBillsPage()
-    await this.waitForElementInWorker('[pause]')
+    await this.fetchBills(context)
   }
 
   async getEmailAndBirthDate() {
@@ -302,12 +305,224 @@ class CdiscountContentScript extends ContentScript {
       '#orderdetails'
     )
   }
+
+  async fetchBills(context) {
+    this.log('info', '📍️ fetchBills starts')
+    const numberOfOrders = await this.runInWorker('getOrdersLength')
+    const billsToSave = []
+    for (let i = 0; i < numberOfOrders; i++) {
+      await this.runInWorker('selectOrder', i)
+      await Promise.race([
+        this.waitForElementInWorker('div[id*="blockSchedule"]'),
+        this.runInWorkerUntilTrue({
+          method: 'checkOrderSelection'
+        })
+      ])
+      await this.runInWorkerUntilTrue({
+        method: 'checkOrderSelection'
+      })
+      const pageBills = await this.runInWorker('getBills', i)
+      billsToSave.push(...pageBills)
+    }
+    await this.saveBills(billsToSave, {
+      context,
+      contentType: 'application/pdf',
+      fileIdAttributes: ['vendorRef'],
+      qualificationLabel: 'other_invoice'
+    })
+  }
+
+  getOrdersLength() {
+    this.log('info', '📍️ getOrdersLength starts')
+    const selectElement = document.querySelector(
+      '#OrderTrackingFormData_SaleFolderId'
+    )
+    return selectElement.querySelectorAll('option').length
+  }
+
+  async getBills(i) {
+    this.log('info', '📍️ getBills starts')
+    const selectElement = document.querySelector(
+      '#OrderTrackingFormData_SaleFolderId'
+    )
+    const foundBills = selectElement.querySelectorAll('option')
+    const alreadyFetchedBillsValue = []
+    const shownBillValue = foundBills[i].getAttribute('value')
+    alreadyFetchedBillsValue.push(shownBillValue)
+
+    const ordersElements = document.querySelectorAll('#servGuaranteeDiv')
+    const bills = []
+    let j = 0
+    for (const ordersElement of ordersElements) {
+      this.log('info', `Scraping order n°${j + 1}/${ordersElements.length}`)
+      const orderCardLeft = ordersElement.querySelector(
+        '.czOrderHeaderBlocLeft'
+      )
+      const orderCardRight = ordersElement.querySelector(
+        '.czOrderHeaderBlocRight'
+      )
+      const orderBillHref = orderCardRight.querySelector(
+        'a[title="Imprimer la facture"]'
+      )
+        ? orderCardRight
+            .querySelector('a[title="Imprimer la facture"]')
+            .getAttribute('href')
+        : null
+      if (!orderBillHref) {
+        this.log('info', 'No bills to download, jumping this order')
+        j++
+        continue
+      }
+      const dateString = orderCardLeft.querySelector('.date > span').textContent
+      const parsedDate = parse(dateString, 'dd MMMM yyyy', new Date(), {
+        locale: fr
+      })
+      const orderStatus = orderCardLeft.querySelector(
+        '.date > :last-child'
+      ).textContent
+      const orderReference = orderCardLeft
+        .querySelector('.czOrderCustomerReference')
+        .textContent.split(':')[1]
+        .trim()
+      // It has been agreed to just save "Cdiscount" as the vendor for simplicity
+      // Keeping this around for later just in case
+      // const orderVendorElement = orderCardLeft.querySelector(
+      //   '.czOrderCustomerReference'
+      // ).nextElementSibling
+      // let orderVendorUrl = orderVendorElement.querySelector('a')
+      //   ? orderVendorElement.querySelector('a').getAttribute('href')
+      //   : baseUrl
+
+      // const orderVendorName = orderVendorElement.querySelector('strong')
+      //   ? orderVendorElement.querySelector('strong').textContent
+      //   : 'Cdiscount'
+      let foundPrice = orderCardLeft
+        .querySelector('.czOrderCustomerReference')
+        .nextElementSibling.nextSibling.textContent.trim()
+        .split('payé')[0]
+        .trim()
+      let amount
+      let currency
+      // Sometimes the price is hosted by a different element, we need to check values
+      if (!foundPrice || foundPrice === '') {
+        const foundVendorPrice = document
+          .querySelector('div[id*="blockSchedule"]')
+          .textContent.split('payé')[0]
+          .trim()
+        amount = parseFloat(foundVendorPrice.split('  ')[0].replace(',', '.'))
+        currency = foundVendorPrice.split('  ')[1]
+      } else {
+        amount = parseFloat(foundPrice.split('  ')[0].replace(',', '.'))
+        currency = foundPrice.split('  ')[1]
+      }
+      const fileurl = `https://clients.cdiscount.com${orderBillHref}`
+      const filename = `${format(
+        parsedDate,
+        'yyyy-MM-dd'
+      )}_Cdiscount_${amount}${currency}.pdf`
+      const oneBill = {
+        vendorRef: orderReference,
+        date: new Date(parsedDate),
+        fileurl,
+        filename,
+        amount,
+        currency,
+        vendor: 'Cdiscount',
+        fileAttributes: {
+          metadata: {
+            contentAuthor: 'cdiscount.com',
+            issueDate: new Date(),
+            datetime: new Date(parsedDate),
+            datetimeLabel: 'issueDate',
+            carbonCopy: true
+          }
+        }
+      }
+      if (dateString === orderStatus) {
+        this.log(
+          'info',
+          'Order too old to have a status, removing orderStatus key'
+        )
+        delete oneBill.orderStatus
+      }
+      bills.push(oneBill)
+      j++
+    }
+    document.querySelector('#servGuaranteeDiv').remove()
+    return bills
+  }
+
+  async selectOrder(i) {
+    this.log('info', '📍️ selectOrder starts')
+    const form = document.getElementById('OrderTrackingForm')
+    const selectElement = document.querySelector(
+      '#OrderTrackingFormData_SaleFolderId'
+    )
+    const foundBills = selectElement.querySelectorAll('option')
+    if (!foundBills[i].selected && i > 0) {
+      foundBills[i].selected = true
+      form.submit()
+    }
+  }
+
+  async checkOrderSelection() {
+    this.log('info', '📍️ checkOrderSelection starts')
+    await waitFor(
+      () => {
+        const referenceElement = document.querySelector(
+          '.czOrderCustomerReference'
+        )
+        let divPriceElement = document.querySelector('div[id*="blockSchedule"]')
+        let isPaidPriceString
+        if (referenceElement) {
+          isPaidPriceString = Boolean(
+            referenceElement.nextElementSibling?.nextSibling?.textContent.match(
+              '€'
+            )
+          )
+        }
+        let isDivPriceElementReady
+        if (divPriceElement) {
+          isDivPriceElementReady = Boolean(
+            divPriceElement.textContent.match('payé')
+          )
+        }
+        if (
+          document.querySelector('#servGuaranteeDiv') &&
+          isDivPriceElementReady
+        ) {
+          this.log('info', 'Product loaded - Price div')
+          return true
+        } else if (
+          document.querySelector('#servGuaranteeDiv') &&
+          isPaidPriceString
+        ) {
+          this.log('info', 'Product loaded - Price string')
+          return true
+        }
+        this.log('info', 'Product not loaded yet')
+        return false
+      },
+      {
+        interval: 1000,
+        timeout: 30 * 1000
+      }
+    )
+    return true
+  }
 }
 
 const connector = new CdiscountContentScript()
 connector
   .init({
-    additionalExposedMethodsNames: ['getEmailAndBirthDate', 'getIdentity']
+    additionalExposedMethodsNames: [
+      'getEmailAndBirthDate',
+      'getIdentity',
+      'getOrdersLength',
+      'selectOrder',
+      'checkOrderSelection',
+      'getBills'
+    ]
   })
   .catch(err => {
     log.warn(err)

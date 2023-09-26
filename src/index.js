@@ -72,8 +72,22 @@ class CdiscountContentScript extends ContentScript {
     }
     const authenticated = await this.runInWorker('checkAuthenticated')
     if (!authenticated) {
-      this.log('info', 'Not authenticated')
-      await this.showLoginFormAndWaitForAuthentication()
+      const credentials = await this.getCredentials()
+      if (credentials) {
+        try {
+          await this.autoLogin(credentials)
+          this.log('info', 'Auto login successful')
+        } catch (err) {
+          this.log(
+            'info',
+            'Something went wrong with auto login, letting user log in'
+          )
+          await this.showLoginFormAndWaitForAuthentication()
+        }
+      } else {
+        this.log('info', 'Not authenticated')
+        await this.showLoginFormAndWaitForAuthentication()
+      }
     }
     this.unblockWorkerInteractions()
     return true
@@ -86,7 +100,6 @@ class CdiscountContentScript extends ContentScript {
     if (!authenticated) {
       return true
     }
-    // await this.clickAndWait(logoutLinkSelector, loginLinkSelector)
     return true
   }
 
@@ -111,6 +124,29 @@ class CdiscountContentScript extends ContentScript {
   async checkAuthenticated() {
     this.log('info', '🤖 checkAuthenticated')
     return Boolean(document.querySelector('.leftmenu__logout'))
+  }
+
+  async autoLogin(credentials) {
+    this.log('info', '📍️ autoLogin starts')
+    const emailInputSelector = '#CustomerLogin_CustomerLoginFormData_Email'
+    const passwordInputSelector =
+      '#CustomerLogin_CustomerLoginFormData_Password'
+    const submitButton = 'input[type="submit"]'
+    await this.waitForElementInWorker(emailInputSelector)
+    this.log('debug', 'Fill email field')
+    await this.runInWorker('fillText', emailInputSelector, credentials.email)
+    await this.waitForElementInWorker(passwordInputSelector)
+    this.log('debug', 'Fill password field')
+    await this.runInWorker(
+      'fillText',
+      passwordInputSelector,
+      credentials.password
+    )
+    await this.runInWorker('click', submitButton)
+    await this.Promise.race([
+      this.waitForElementInWorker('.leftmenu__logout'),
+      this.runInWorkerUntilTrue({ method: 'checkLogoutError' })
+    ])
   }
 
   async getUserDataFromWebsite() {
@@ -146,6 +182,27 @@ class CdiscountContentScript extends ContentScript {
     }
     await this.navigateToBillsPage()
     await this.fetchBills(context)
+  }
+
+  async checkLogoutError() {
+    this.log('info', '📍️ checkLogoutError starts')
+    await waitFor(
+      () => {
+        // There is always at least one alert element,
+        // but if there is an error done during login, another element spawns
+        const alertElements = document.querySelectorAll('.c-alert')
+        if (alertElements.length > 1) {
+          this.log('warn', 'Error on login')
+          return true
+        }
+        return false
+      },
+      {
+        interval: 1000,
+        timeout: 60 * 1000
+      }
+    )
+    return true
   }
 
   async getEmailAndBirthDate() {
@@ -516,6 +573,7 @@ const connector = new CdiscountContentScript()
 connector
   .init({
     additionalExposedMethodsNames: [
+      'checkLogoutError',
       'getEmailAndBirthDate',
       'getIdentity',
       'getOrdersLength',

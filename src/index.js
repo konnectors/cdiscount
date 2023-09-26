@@ -29,11 +29,11 @@ class CdiscountContentScript extends ContentScript {
           })
         })
       }
-      const error = document.querySelector('.error')
-      if (error) {
+      const errors = document.querySelectorAll('.c-alert')
+      if (errors.length > 1) {
         this.bridge.emit('workerEvent', {
           event: 'loginError',
-          payload: { msg: error.innerHTML }
+          payload: { msg: errors[0].innerHTML }
         })
       }
     })
@@ -41,10 +41,10 @@ class CdiscountContentScript extends ContentScript {
 
   onWorkerEvent({ event, payload }) {
     if (event === 'loginSubmit') {
-      this.log('info', 'received loginSubmit, blocking user interactions')
+      this.log('debug', 'received loginSubmit, blocking user interactions')
       const { email, password } = payload || {}
       if (email && password) {
-        this.log('info', 'Couple email/password found')
+        this.log('debug', 'Couple email/password found')
         this.store.userCredentials = { email, password }
       }
       this.blockWorkerInteractions()
@@ -147,10 +147,7 @@ class CdiscountContentScript extends ContentScript {
       credentials.password
     )
     await this.runInWorker('click', submitButton)
-    await this.Promise.race([
-      this.waitForElementInWorker('.leftmenu__logout'),
-      this.runInWorkerUntilTrue({ method: 'checkLogoutError' })
-    ])
+    await this.waitForElementInWorker('.leftmenu__logout')
   }
 
   async getUserDataFromWebsite() {
@@ -186,27 +183,6 @@ class CdiscountContentScript extends ContentScript {
     }
     await this.navigateToBillsPage()
     await this.fetchBills(context)
-  }
-
-  async checkLogoutError() {
-    this.log('info', '📍️ checkLogoutError starts')
-    await waitFor(
-      () => {
-        // There is always at least one alert element,
-        // but if there is an error done during login, another element spawns
-        const alertElements = document.querySelectorAll('.c-alert')
-        if (alertElements.length > 1) {
-          this.log('warn', 'Error on login')
-          return true
-        }
-        return false
-      },
-      {
-        interval: 1000,
-        timeout: 60 * 1000
-      }
-    )
-    return true
   }
 
   async getEmailAndBirthDate() {
@@ -577,7 +553,6 @@ const connector = new CdiscountContentScript()
 connector
   .init({
     additionalExposedMethodsNames: [
-      'checkLogoutError',
       'getEmailAndBirthDate',
       'getIdentity',
       'getOrdersLength',

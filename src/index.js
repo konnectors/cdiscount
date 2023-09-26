@@ -60,9 +60,9 @@ class CdiscountContentScript extends ContentScript {
   async ensureAuthenticated({ account }) {
     this.log('info', '🤖 ensureAuthenticated')
     this.bridge.addEventListener('workerEvent', this.onWorkerEvent.bind(this))
-    // if (!account) {
-    //   await this.ensureNotAuthenticated()
-    // }
+    if (!account) {
+      await this.ensureNotAuthenticated()
+    }
     if (
       !(await this.isElementInWorker(
         '#CustomerLogin_CustomerLoginFormData_Email'
@@ -100,6 +100,10 @@ class CdiscountContentScript extends ContentScript {
     if (!authenticated) {
       return true
     }
+    await this.clickAndWait(
+      '.leftmenu__logout > div > a',
+      '#CustomerLogin_CustomerLoginFormData_Email'
+    )
     return true
   }
 

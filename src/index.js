@@ -404,7 +404,9 @@ class CdiscountContentScript extends ContentScript {
         ? orderCardRight
             .querySelector('a[title="Imprimer la facture"]')
             .getAttribute('href')
-        : null
+        : orderCardRight
+            .querySelector('a[title="Imprimer la preuve d\'achat"]')
+            .getAttribute('href')
       if (!orderBillHref) {
         this.log('info', 'No bills to download, jumping this order')
         j++
@@ -458,6 +460,12 @@ class CdiscountContentScript extends ContentScript {
         'yyyy-MM-dd'
       )}_Cdiscount_${amount}${currency}.pdf`
       const oneBill = {
+        shouldReplaceFile: (file, entry) => {
+          if (file.fileurl != entry.fileurl) {
+            return true
+          }
+          return false
+        },
         vendorRef: orderReference,
         date: new Date(parsedDate),
         fileurl,

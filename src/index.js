@@ -392,6 +392,7 @@ class CdiscountContentScript extends ContentScript {
     let j = 0
     for (const ordersElement of ordersElements) {
       this.log('info', `Scraping order n°${j + 1}/${ordersElements.length}`)
+      let documentType
       const orderCardLeft = ordersElement.querySelector(
         '.czOrderHeaderBlocLeft'
       )
@@ -401,12 +402,18 @@ class CdiscountContentScript extends ContentScript {
       const orderBillHref = orderCardRight.querySelector(
         'a[title="Imprimer la facture"]'
       )
-        ? orderCardRight
-            .querySelector('a[title="Imprimer la facture"]')
-            .getAttribute('href')
-        : orderCardRight
-            .querySelector('a[title="Imprimer la preuve d\'achat"]')
-            .getAttribute('href')
+        ? (() => {
+            documentType = 'bill'
+            return orderCardRight
+              .querySelector('a[title="Imprimer la facture"]')
+              .getAttribute('href')
+          })()
+        : (() => {
+            documentType = 'proof'
+            return orderCardRight
+              .querySelector('a[title="Imprimer la preuve d\'achat"]')
+              .getAttribute('href')
+          })()
       if (!orderBillHref) {
         this.log('info', 'No bills to download, jumping this order')
         j++
@@ -461,11 +468,12 @@ class CdiscountContentScript extends ContentScript {
       )}_Cdiscount_${amount}${currency}.pdf`
       const oneBill = {
         shouldReplaceFile: (file, entry) => {
-          if (file.fileurl != entry.fileurl) {
+          if (file.documentType != entry.documentType) {
             return true
           }
           return false
         },
+        documentType,
         vendorRef: orderReference,
         date: new Date(parsedDate),
         fileurl,

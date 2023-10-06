@@ -5400,7 +5400,7 @@ module.exports = _defineProperty, module.exports.__esModule = true, module.expor
 /***/ ((module) => {
 
 "use strict";
-module.exports = JSON.parse('{"name":"cozy-clisk","version":"0.24.0","description":"All the libs needed to run a cozy client connector","repository":{"type":"git","url":"git+https://github.com/konnectors/libs.git"},"files":["dist"],"keywords":["konnector"],"main":"dist/index.js","author":"doubleface <christophe@cozycloud.cc>","license":"MIT","bugs":{"url":"https://github.com/konnectors/libs/issues"},"homepage":"https://github.com/konnectors/libs#readme","scripts":{"lint":"eslint \'src/**/*.js\'","prepublishOnly":"yarn run build","build":"babel --root-mode upward src/ -d dist/ --copy-files --verbose --ignore \'**/*.spec.js\',\'**/*.spec.jsx\'","test":"jest src"},"devDependencies":{"@babel/core":"7.20.12","babel-jest":"29.3.1","babel-preset-cozy-app":"2.0.4","jest":"29.3.1","jest-environment-jsdom":"29.3.1","typescript":"4.9.5"},"dependencies":{"@cozy/minilog":"^1.0.0","bluebird-retry":"^0.11.0","cozy-client":"^41.2.0","ky":"^0.25.1","lodash":"^4.17.21","p-wait-for":"^5.0.2","post-me":"^0.4.5"},"gitHead":"787e6a965d2b4393ec8244b0fb824d644119ed8e"}');
+module.exports = JSON.parse('{"name":"cozy-clisk","version":"0.23.0","description":"All the libs needed to run a cozy client connector","repository":{"type":"git","url":"git+https://github.com/konnectors/libs.git"},"files":["dist"],"keywords":["konnector"],"main":"dist/index.js","author":"doubleface <christophe@cozycloud.cc>","license":"MIT","bugs":{"url":"https://github.com/konnectors/libs/issues"},"homepage":"https://github.com/konnectors/libs#readme","scripts":{"lint":"eslint \'src/**/*.js\'","prepublishOnly":"yarn run build","build":"babel --root-mode upward src/ -d dist/ --copy-files --verbose --ignore \'**/*.spec.js\',\'**/*.spec.jsx\'","test":"jest src"},"devDependencies":{"@babel/core":"7.20.12","babel-jest":"29.3.1","babel-preset-cozy-app":"2.0.4","jest":"29.3.1","jest-environment-jsdom":"29.3.1","typescript":"4.9.5"},"dependencies":{"@cozy/minilog":"^1.0.0","bluebird-retry":"^0.11.0","cozy-client":"^34.11.0","ky":"^0.25.1","lodash":"^4.17.21","p-wait-for":"^5.0.2","post-me":"^0.4.5"},"gitHead":"8b2ecac5417090322025a92918b39577e96b3403"}');
 
 /***/ }),
 /* 46 */
@@ -13248,6 +13248,7 @@ class CdiscountContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPO
     let j = 0
     for (const ordersElement of ordersElements) {
       this.log('info', `Scraping order n°${j + 1}/${ordersElements.length}`)
+      let documentType
       const orderCardLeft = ordersElement.querySelector(
         '.czOrderHeaderBlocLeft'
       )
@@ -13257,10 +13258,18 @@ class CdiscountContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPO
       const orderBillHref = orderCardRight.querySelector(
         'a[title="Imprimer la facture"]'
       )
-        ? orderCardRight
-            .querySelector('a[title="Imprimer la facture"]')
-            .getAttribute('href')
-        : null
+        ? (() => {
+            documentType = 'bill'
+            return orderCardRight
+              .querySelector('a[title="Imprimer la facture"]')
+              .getAttribute('href')
+          })()
+        : (() => {
+            documentType = 'proof'
+            return orderCardRight
+              .querySelector('a[title="Imprimer la preuve d\'achat"]')
+              .getAttribute('href')
+          })()
       if (!orderBillHref) {
         this.log('info', 'No bills to download, jumping this order')
         j++
@@ -13314,6 +13323,13 @@ class CdiscountContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPO
         'yyyy-MM-dd'
       )}_Cdiscount_${amount}${currency}.pdf`
       const oneBill = {
+        shouldReplaceFile: (file, entry) => {
+          if (file.documentType != entry.documentType) {
+            return true
+          }
+          return false
+        },
+        documentType,
         vendorRef: orderReference,
         date: new Date(parsedDate),
         fileurl,

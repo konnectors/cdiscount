@@ -13317,21 +13317,22 @@ class CdiscountContentScript extends cozy_clisk_dist_contentscript__WEBPACK_IMPO
       const orderCardRight = ordersElement.querySelector(
         '.czOrderHeaderBlocRight'
       )
-      const orderBillHref = orderCardRight.querySelector(
+      const orderBillHrefElement = orderCardRight.querySelector(
         'a[title="Imprimer la facture"]'
       )
-        ? (() => {
-            documentType = 'bill'
-            return orderCardRight
-              .querySelector('a[title="Imprimer la facture"]')
-              .getAttribute('href')
-          })()
-        : (() => {
-            documentType = 'proof'
-            return orderCardRight
-              .querySelector('a[title="Imprimer la preuve d\'achat"]')
-              .getAttribute('href')
-          })()
+      let orderBillHref
+
+      if (orderBillHrefElement) {
+        documentType = 'bill'
+        orderBillHref = orderCardRight
+          .querySelector('a[title="Imprimer la facture"]')
+          ?.getAttribute('href')
+      } else {
+        documentType = 'proof'
+        orderBillHref = orderCardRight
+          .querySelector('a[title="Imprimer la preuve d\'achat"]')
+          ?.getAttribute('href')
+      }
       if (!orderBillHref) {
         this.log('info', 'No bills to download, jumping this order')
         j++

@@ -1,5 +1,5 @@
 {
-  "version": "2.2.0",
+  "version": "2.2.1",
   "name": "Cdiscount",
   "type": "konnector",
   "language": "node",
@@ -34,6 +34,10 @@
     "identities": {
       "type": "io.cozy.identities"
     }
+  },
+  "developer": {
+    "name": "Cozy Cloud",
+    "url": "https://cozy.io"
   },
   "locales": {
     "fr": {
